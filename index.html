@@ -3729,11 +3729,14 @@ function renderWeekPersonFilter(){
   const allOwners=[...new Set(workTasks.map(t=>t.assignee?.trim()).filter(Boolean))].sort();
 
   function personWeekStats(name){
+    // Use string comparison to avoid timezone issues
+    const weekDateStrings=days.map(d=>fmtDate(d));
     const wt=workTasks.filter(t=>{
       if(!t.date)return false;
-      const d=parseDate(t.date);return d>=days[0]&&d<=days[6]&&(t.assignee?.trim()||'')===name;
+      const nameMatch=(t.assignee?.trim()||'')===name.trim();
+      return nameMatch && weekDateStrings.includes(t.date);
     });
-    const totalH=wt.filter(t=>t.status!=='done').reduce((s,t)=>s+(t.hours||0),0);
+    const totalH=wt.reduce((s,t)=>s+(parseFloat(t.hours)||0),0);
     const pct=Math.round(totalH/42.5*100);
     return{total:wt.length,hours:totalH,pct};
   }
@@ -4316,17 +4319,21 @@ function _doExportTimesheetFallback(member,month,year,taskRows,fname){
 
 
 function getHoursWorkload(assignee,period='week'){
-  const capacity=period==='week'?42.5:170; // 8.5h × 5 ngày = 42.5h/tuần
+  const capacity=period==='week'?42.5:170;
   const today2=new Date(todayStr);
   const tasks=workTasks.filter(t=>{
     if(t.status==='done')return false;
-    if(assignee&&(t.assignee?.trim()||'')!==assignee)return false;
+    if(assignee&&(t.assignee?.trim()||'')!==assignee.trim())return false;
     if(!t.date)return false;
+    if(period==='week'){
+      // Use string comparison via getWeekDays → fmtDate to avoid timezone issues
+      const weekDates=getWeekDays().map(d=>fmtDate(d));
+      return weekDates.includes(t.date);
+    }
     const d=parseDate(t.date);
-    if(period==='week'){const days=getWeekDays();return d>=days[0]&&d<=days[6];}
     return d.getMonth()===today2.getMonth()&&d.getFullYear()===today2.getFullYear();
   });
-  const totalHours=tasks.reduce((s,t)=>s+(t.hours||0),0);
+  const totalHours=tasks.reduce((s,t)=>s+(parseFloat(t.hours)||0),0);
   return{totalHours,capacity,pct:Math.round(totalHours/capacity*100),tasks:tasks.length};
 }
 
