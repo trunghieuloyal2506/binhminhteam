@@ -957,13 +957,21 @@ select option{background:var(--surface);color:var(--text)}
         <option value="doing">⚡ Đang làm</option>
         <option value="done">✅ Hoàn thành</option>
       </select>
+      <select id="wt-leave" onchange="onLeaveChange()">
+        <option value="">-- Loại nghỉ (nếu có) --</option>
+        <option value="AL">🏖️ Nghỉ phép (Annual Leave)</option>
+        <option value="PL">🎌 Nghỉ lễ (Public Holiday)</option>
+        <option value="SL">🤒 Nghỉ bệnh (Sick Leave)</option>
+        <option value="SPL">⭐ Nghỉ đặc biệt (Special Leave)</option>
+        <option value="TT">🚗 Công tác (Travelling)</option>
+      </select>
+    </div>
+    <div class="form-grid">
       <select id="wt-pri">
         <option value="high">🔴 Cao</option>
         <option value="mid" selected>🟡 Trung bình</option>
         <option value="low">🟢 Thấp</option>
       </select>
-    </div>
-    <div class="form-grid">
       <input type="date" id="wt-date">
       <input type="time" id="wt-time" value="09:00">
       <input type="number" id="wt-hours" placeholder="⏱️ Số giờ ước tính" min="0.5" max="40" step="0.5" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:14px">
@@ -2050,6 +2058,7 @@ function addWorkTask(){
     assignee,
     important:document.getElementById('wt-important')?.checked||false,
     urgent:document.getElementById('wt-urgent')?.checked||false,
+    leaveType:document.getElementById('wt-leave')?.value||'',
     note:document.getElementById('wt-note').value
   });
   if(assignee) addAssigneeName(assignee);
@@ -2058,6 +2067,7 @@ function addWorkTask(){
   document.getElementById('wt-assignee').value='';
   if(document.getElementById('wt-important')) document.getElementById('wt-important').checked=false;
   if(document.getElementById('wt-urgent')) document.getElementById('wt-urgent').checked=false;
+  if(document.getElementById('wt-leave')) document.getElementById('wt-leave').value='';
   saveData();
   closeForm('work-task-add');renderWorkPage();renderToday();renderWeekView();renderMonthView();
 }
@@ -2142,6 +2152,18 @@ function openEditWorkTask(id){
         <span style="color:#EF4444">⚡ Khẩn cấp</span>
       </label>
       <span style="font-size:11px;color:var(--text3);align-self:center">Eisenhower: ${t.important&&t.urgent?'🔴 DO FIRST':t.important&&!t.urgent?'🔵 SCHEDULE':!t.important&&t.urgent?'🟡 DELEGATE':'🟢 ELIMINATE'}</span>
+    </div>
+    <!-- Leave type -->
+    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
+      <label class="field-label">🏖️ Loại nghỉ (để điền vào Timesheet)</label>
+      <select id="wti-leave" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:14px">
+        <option value="" ${!t.leaveType?'selected':''}>-- Không phải nghỉ --</option>
+        <option value="AL" ${t.leaveType==='AL'?'selected':''}>🏖️ Nghỉ phép (Annual Leave)</option>
+        <option value="PL" ${t.leaveType==='PL'?'selected':''}>🎌 Nghỉ lễ (Public Holiday)</option>
+        <option value="SL" ${t.leaveType==='SL'?'selected':''}>🤒 Nghỉ bệnh (Sick Leave)</option>
+        <option value="SPL" ${t.leaveType==='SPL'?'selected':''}>⭐ Nghỉ đặc biệt (Special Leave)</option>
+        <option value="TT" ${t.leaveType==='TT'?'selected':''}>🚗 Công tác (Travelling)</option>
+      </select>
     </div>`;
   document.getElementById('edit-modal').classList.add('open');
   setTimeout(()=>document.getElementById('wti-name').focus(),50);
@@ -2763,6 +2785,7 @@ function saveEdit(){
     t.hours=parseFloat(document.getElementById('wti-hours').value)||0;
     t.important=document.getElementById('wti-important')?.checked||false;
     t.urgent=document.getElementById('wti-urgent')?.checked||false;
+    t.leaveType=document.getElementById('wti-leave')?.value||'';
     const newAssignee=(document.getElementById('wti-assignee').value||'').trim();
     t.assignee=newAssignee;
     if(newAssignee) addAssigneeName(newAssignee);
@@ -4147,31 +4170,59 @@ def gen(d):
     buf=io.BytesIO(); wb.save(buf); buf.seek(0)
     return base64.b64encode(buf.read()).decode()`;
 // ─── TIMESHEET EXPORT ──────────────────────────
+function onLeaveChange(){
+  const val=document.getElementById('wt-leave')?.value||'';
+  if(!val)return;
+  if(!document.getElementById('wt-hours').value) document.getElementById('wt-hours').value='8.5';
+  document.getElementById('wt-status').value='done';
+  const nameEl=document.getElementById('wt-name');
+  if(!nameEl.value){
+    const lbl={AL:'Nghỉ phép',PL:'Nghỉ lễ',SL:'Nghỉ bệnh',SPL:'Nghỉ đặc biệt',TT:'Công tác'};
+    nameEl.value=lbl[val]||'';
+  }
+}
+
 function buildTimesheetData(member, month, year){
   const tasks=workTasks.filter(t=>t.assignee?.trim()===member.name);
   const rowMap={};
+  const leaveMap={AL:{},PL:{},SL:{},SPL:{},TT:{}};
+
   tasks.forEach(t=>{
     if(!t.date)return;
     const d=new Date(t.date);
     if(d.getMonth()+1!==month||d.getFullYear()!==year)return;
+    const dayNum=d.getDate();
+
+    // Handle leave types
+    if(t.leaveType&&leaveMap[t.leaveType]!==undefined){
+      leaveMap[t.leaveType][dayNum]=(leaveMap[t.leaveType][dayNum]||0)+(parseFloat(t.hours)||8.5);
+      return;
+    }
+
+    // Regular work task
     const key=(t.projId||'?')+'__'+(t.phase||'');
     if(!rowMap[key]){
       const proj=projects.find(p=>p.id===t.projId);
       const lot=lots.find(l=>l.id===t.lotId);
       const phaseToCode={cost:'CP',pre:'BoQ',post:'IPC',qs:'CA'};
+      // Section: cost+pre = Pre-Contract, post+qs = Post-Contract
+      const section=['cost','pre'].includes(t.phase)?'pre':['post','qs'].includes(t.phase)?'post':'other';
       rowMap[key]={
         projName:proj?.name||t.name||'?',
         projCode:proj?.name?.substring(0,10)||'?',
         package:lot?.name||'Main Contract',
         taskCode:phaseToCode[t.phase]||'ME',
         phase:t.phase||'',
+        section,
         hours:{},
       };
     }
-    const dayNum=new Date(t.date).getDate();
-    rowMap[key].hours[dayNum]=(rowMap[key].hours[dayNum]||0)+(t.hours||0);
+    rowMap[key].hours[dayNum]=(rowMap[key].hours[dayNum]||0)+(parseFloat(t.hours)||0);
   });
-  return Object.values(rowMap);
+
+  const result=Object.values(rowMap);
+  result._leaveMap=leaveMap;
+  return result;
 }
 
 function exportTimesheetForMember(memberId){
@@ -4295,13 +4346,26 @@ function _doExportTimesheetFallback(member,month,year,taskRows,fname){
     });
     aoa.push([]);
   }
-  addSection('Pre-Contract works', taskRows.filter(t=>['cost','pre'].includes(t.phase)));
-  addSection('Post-Contract works',taskRows.filter(t=>['post','qs'].includes(t.phase)));
-  addSection('Other works',        taskRows.filter(t=>!['cost','pre','post','qs'].includes(t.phase)));
+  addSection('Pre-Contract works',  taskRows.filter(t=>t.section==='pre'||(['cost','pre'].includes(t.phase)&&!t.section)));
+  addSection('Post-Contract works', taskRows.filter(t=>t.section==='post'||(['post','qs'].includes(t.phase)&&!t.section)));
+  addSection('Other works',         taskRows.filter(t=>!t.section||t.section==='other'));
+  // Tasks with no phase - skip duplicates
+  
 
-  [['Travelling - outside office',''],['Sick Leave',''],['Special Leave',''],
-   ['Annual Leave','AL'],['Public Holidays','PL']].forEach(([l,c])=>{
-    aoa.push([l,c,'','',...Array(days).fill(''),0]);
+  // Leave rows — use real data from leaveMap
+  const lm=taskRows._leaveMap||{};
+  [
+    ['Travelling - outside office','TT'],
+    ['Sick Leave','SL'],
+    ['Special Leave','SPL'],
+    ['Annual Leave','AL'],
+    ['Public Holidays','PL'],
+  ].forEach(([label,code])=>{
+    const leaveHours=lm[code]||{};
+    const row=[label,code,'',''];
+    let tot=0;
+    for(let d=1;d<=days;d++){const h=leaveHours[d]||'';row.push(h||'');tot+=h||0;}
+    row.push(tot||0); aoa.push(row);
   });
 
   const wb=XLSX.utils.book_new();
