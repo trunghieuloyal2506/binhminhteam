@@ -3245,8 +3245,9 @@ function renderStats(){
   }).sort((a,b)=>b.wlPct-a.wlPct);
 
   // Workload warning
-  const overloaded=workloads.filter(w=>w.wlPct>100&&w.name!=='(Chưa phân công)');
-  const warned=workloads.filter(w=>w.wlPct>80&&w.wlPct<=100&&w.name!=='(Chưa phân công)');
+  const overloaded=workloads.filter(w=>w.wlPct>120&&w.name!=='(Chưa phân công)');
+  const warnHigh=workloads.filter(w=>w.wlPct>110&&w.wlPct<=120&&w.name!=='(Chưa phân công)');
+  const warnMid=workloads.filter(w=>w.wlPct>100&&w.wlPct<=110&&w.name!=='(Chưa phân công)');
   let warnHtml='';
   overloaded.forEach(w=>{warnHtml+=`<div class="overload-alert"><span class="overload-icon">🔴</span><div class="overload-text"><strong>${escHtml(w.name)}</strong> đang <strong>QUÁ TẢI ${w.wlPct}%</strong> — điểm: ${w.score}/${capacity}</div></div>`;});
   warned.forEach(w=>{warnHtml+=`<div class="overload-alert" style="background:#FFFBEB;border-color:#FDE68A"><span class="overload-icon">🟡</span><div class="overload-text" style="color:#92400E"><strong>${escHtml(w.name)}</strong> gần quá tải <strong>${w.wlPct}%</strong></div></div>`;});
@@ -3374,8 +3375,8 @@ function renderStats(){
   const hoursRows=allNames2.map(name=>{
     const wk=getHoursWorkload(name,'week');
     const mn=getHoursWorkload(name,'month');
-    const wC=wk.pct>100?'#EF4444':wk.pct>80?'#F59E0B':'#22C55E';
-    const mC=mn.pct>100?'#EF4444':mn.pct>80?'#F59E0B':'#22C55E';
+    const {color:wC}=wlStatus(wk.pct);
+    const {color:mC}=wlStatus(mn.pct);
     return`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
       <div style="width:24px;height:24px;border-radius:50%;background:${getAssigneeColor(name)};color:white;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${getAssigneeInitial(name)}</div>
       <span style="flex:1;font-size:12px;font-weight:500">${escHtml(name)}</span>
@@ -3552,11 +3553,13 @@ function renderStats(){
     const score=pt.filter(t=>t.status!=='done').reduce((s,t)=>s+(priWeight[t.pri]||2),0);
     return{name,score,wlPct:Math.round(score/capacity*100),color:getAssigneeColor(name)};
   }).sort((a,b)=>b.wlPct-a.wlPct);
-  const overloaded=workloads.filter(w=>w.wlPct>100&&w.name!=='(Chưa phân công)');
-  const warned=workloads.filter(w=>w.wlPct>80&&w.wlPct<=100&&w.name!=='(Chưa phân công)');
+  const overloaded=workloads.filter(w=>w.wlPct>120&&w.name!=='(Chưa phân công)');
+  const warnHigh=workloads.filter(w=>w.wlPct>110&&w.wlPct<=120&&w.name!=='(Chưa phân công)');
+  const warnMid=workloads.filter(w=>w.wlPct>100&&w.wlPct<=110&&w.name!=='(Chưa phân công)');
   let alertHtml='';
-  overloaded.forEach(w=>{alertHtml+=`<div class="dash-alert dash-alert-red">🔴 <strong>${escHtml(w.name)}</strong>&nbsp;đang QUÁ TẢI&nbsp;<strong>${w.wlPct}%</strong>&nbsp;— điểm workload: ${w.score}/${capacity}. Cần phân bổ lại task.</div>`;});
-  warned.forEach(w=>{alertHtml+=`<div class="dash-alert dash-alert-yellow">🟡 <strong>${escHtml(w.name)}</strong>&nbsp;gần quá tải&nbsp;<strong>${w.wlPct}%</strong>&nbsp;— nên cân nhắc trước khi thêm task mới.</div>`;});
+  overloaded.forEach(w=>{alertHtml+=`<div class="dash-alert dash-alert-red">🔴 <strong>${escHtml(w.name)}</strong>&nbsp;VƯỢT TẢI CAO&nbsp;<strong>${w.wlPct}%</strong>&nbsp;(+${w.wlPct-100}% so với capacity). Cần phân bổ lại ngay!</div>`;});
+  warnHigh.forEach(w=>{alertHtml+=`<div class="dash-alert" style="background:#FFF7ED;border-color:#FED7AA;color:#9A3412">🟠 <strong>${escHtml(w.name)}</strong>&nbsp;vượt tải Trung Bình&nbsp;<strong>${w.wlPct}%</strong>&nbsp;(+${w.wlPct-100}% so với capacity).</div>`;});
+  warnMid.forEach(w=>{alertHtml+=`<div class="dash-alert dash-alert-yellow">🟡 <strong>${escHtml(w.name)}</strong>&nbsp;vượt tải Nhẹ&nbsp;<strong>${w.wlPct}%</strong>&nbsp;(+${w.wlPct-100}% so với capacity).</div>`;});
   document.getElementById('dash-alerts').innerHTML=alertHtml;
 
   // ── Status donut ──
@@ -3679,7 +3682,7 @@ function renderStats(){
     const ontimeRate=doneWithDate.length>0?Math.round(doneWithDate.filter(t=>parseDate(t.date)>=todayDate).length/doneWithDate.length*100):null;
     return{name,tot,dn,doi,late,score,wlPct,col,ontimeRate};
   }).sort((a,b)=>b.wlPct-a.wlPct);
-  const wlColor=p=>p>100?'#EF4444':p>80?'#F59E0B':'#22C55E';
+  const wlColor=p=>wlStatus(p).color;
   document.getElementById('dash-person-table').innerHTML=`
     <div style="display:grid;grid-template-columns:1.2fr repeat(5,auto) 1.5fr;gap:4px;font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;padding-bottom:6px;border-bottom:2px solid var(--border);margin-bottom:6px">
       <div>Người</div><div style="text-align:center">Tổng</div><div style="text-align:center;color:#22C55E">✅</div><div style="text-align:center;color:#F59E0B">⚡</div><div style="text-align:center;color:#EF4444">⏰</div><div style="text-align:center">Đúng hạn</div><div>Workload</div>
@@ -3746,6 +3749,17 @@ function renderStats(){
 }
 
 
+// ─── WORKLOAD STATUS HELPER ────────────────────
+function wlStatus(pct){
+  const over=pct-100;
+  if(pct<=0)   return{color:'#94A3B8',badge:'⬜',label:'Chưa có lịch',shortLabel:'—'};
+  if(pct<=80)  return{color:'#22C55E',badge:'🟢',label:'Bình thường',shortLabel:'Bình thường'};
+  if(pct<=100) return{color:'#F59E0B',badge:'🟡',label:'Sắp đầy',shortLabel:'Sắp đầy'};
+  if(over<=10) return{color:'#F59E0B',badge:'🟡',label:`Vượt tải Nhẹ (+${Math.round(over)}%)`,shortLabel:'Nhẹ'};
+  if(over<=20) return{color:'#F97316',badge:'🟠',label:`Vượt tải Trung Bình (+${Math.round(over)}%)`,shortLabel:'Trung Bình'};
+  return       {color:'#EF4444',badge:'🔴',label:`Vượt tải Cao (+${Math.round(over)}%)`,shortLabel:'Cao'};
+}
+
 function renderWeekPersonFilter(){
   const bar=document.getElementById('week-person-filter');if(!bar)return;
   const days=getWeekDays();
@@ -3772,8 +3786,8 @@ function renderWeekPersonFilter(){
     const color=getAssigneeColor(name);
     const init=getAssigneeInitial(name);
     const st=personWeekStats(name);
-    const wlBadge=st.pct>100?'🔴':st.pct>80?'🟡':st.pct>30?'🟢':'⬜';
-    const wlTitle=`${name}: ${st.hours}h / 42.5h tuần này (${st.pct}%) — ${st.total} task`;
+    const {badge:wlBadge,color:wlC_,label:wlTitle_}=wlStatus(st.pct);
+    const wlTitle=`${name}: ${st.hours}h / 42.5h tuần này (${st.pct}%) — ${wlTitle_}`;
     const isActive=weekPersonFilter===name;
     html+=`<button class="person-chip ${isActive?'active':''}"
       onclick="setWeekPerson('${escHtml(name)}')"
@@ -3790,8 +3804,7 @@ function renderWeekPersonFilter(){
   // Workload bar when specific person is selected
   if(weekPersonFilter!=='all'){
     const st=personWeekStats(weekPersonFilter);
-    const wlColor=st.pct>100?'#EF4444':st.pct>80?'#F59E0B':'#22C55E';
-    const status=st.pct>100?'🔴 Quá tải!':st.pct>80?'🟡 Sắp đầy':st.pct>50?'🟢 Bình thường':st.pct>0?'🟢 Còn chỗ':'⬜ Chưa có lịch tuần này';
+    const {color:wlColor,label:status}=wlStatus(st.pct);
     const color=getAssigneeColor(weekPersonFilter);
     html+=`<div style="margin-top:8px;width:100%;display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border-radius:10px;border:1px solid var(--border)">
       <div style="width:28px;height:28px;border-radius:50%;background:${color};color:white;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${getAssigneeInitial(weekPersonFilter)}</div>
@@ -3846,8 +3859,7 @@ function renderMembersPage(){
     });
     const totalHours=weekTasks.reduce((s,t)=>s+(t.hours||0),0);
     const wlPct=Math.round(totalHours/42.5*100);
-    const wlColor=wlPct>100?'#EF4444':wlPct>80?'#F59E0B':'#22C55E';
-    const wlLabel=wlPct>100?'🔴 Quá tải':wlPct>80?'🟡 Cảnh báo':'🟢 Ổn';
+    const {color:wlColor,badge:wlBadgeM,label:wlLabel}=wlStatus(wlPct);
     const swatches=MEMBER_COLORS.map(c=>`<span class="color-swatch ${m.color===c?'active':''}" style="background:${c}" onclick="setMemberColor('${m.id}','${c}')"></span>`).join('');
     return`<div class="member-card" id="mc-${m.id}" draggable="true"
       ondragstart="memberDragStart(event,'${m.id}')"
@@ -4230,7 +4242,7 @@ function exportTimesheetForMember(memberId){
   if(!m){showDropToast('⚠️ Không tìm thấy nhân sự');return;}
   const month=parseInt(document.getElementById('ts-month')?.value)||new Date().getMonth()+1;
   const year=parseInt(document.getElementById('ts-year')?.value)||new Date().getFullYear();
-  _doExportTimesheet(m,month,year);
+  _exportViaServer([m], month, year);
 }
 
 function exportAllTimesheets(){
@@ -4238,68 +4250,71 @@ function exportAllTimesheets(){
   const year=parseInt(document.getElementById('ts-year')?.value)||new Date().getFullYear();
   syncMembersFromTasks();
   if(!members.length){showDropToast('⚠️ Chưa có nhân sự nào');return;}
-  let i=0;
-  function next(){
-    if(i>=members.length)return;
-    _doExportTimesheet(members[i],month,year);
-    i++; setTimeout(next,1200);
-  }
-  next();
+  _exportViaServer(members, month, year);
 }
 
-async function _doExportTimesheet(member,month,year){
-  const fname=`TimeSheet_${String(month).padStart(2,'0')}_${year}_${member.name.replace(/\s+/g,'_')}.xlsx`;
-  showDropToast(`⏳ Đang tạo timesheet cho ${member.name}...`);
+async function _exportViaServer(memberList, month, year){
+  showDropToast('⏳ Đang tạo timesheet... Vui lòng chờ');
 
-  const taskRows=buildTimesheetData(member,month,year);
+  // Build payload for all members
   const payload={
-    member:{name:member.name, role:member.role||'QS Engineer'},
     month, year,
-    tasks: taskRows.map(t=>({
-      projName:t.projName, projCode:t.projCode, package:t.package,
-      taskCode:t.taskCode, phase:t.phase,
-      hours:Object.fromEntries(Object.entries(t.hours).map(([k,v])=>[String(k),Number(v)||0]))
-    }))
+    members: memberList.map(m=>{
+      const taskRows=buildTimesheetData(m, month, year);
+      const leaveMap=taskRows._leaveMap||{AL:{},PL:{},SL:{},SPL:{},TT:{}};
+      return{
+        member:{name:m.name, role:m.role||'QS Engineer'},
+        tasks: taskRows.map(t=>({
+          projName:t.projName, projCode:t.projCode,
+          package:t.package, taskCode:t.taskCode,
+          phase:t.phase, section:t.section||'',
+          hours:Object.fromEntries(Object.entries(t.hours).map(([k,v])=>[String(k),Number(v)||0]))
+        })),
+        leave_map: Object.fromEntries(
+          Object.entries(leaveMap).map(([k,v])=>[k,
+            Object.fromEntries(Object.entries(v).map(([d,h])=>[String(d),Number(h)||0]))
+          ])
+        )
+      };
+    })
   };
 
   try{
-    const resp = await fetch('https://api.anthropic.com/v1/messages',{
+    // Try local server first
+    const resp=await fetch('http://localhost:5000',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        model:'claude-sonnet-4-6',
-        max_tokens:4096,
-        messages:[{
-          role:'user',
-          content: buildTimesheetPrompt(payload)
-        }]
-      })
+      body:JSON.stringify(payload),
+      signal:AbortSignal.timeout(10000)
     });
 
-    if(!resp.ok) throw new Error(`API ${resp.status}`);
-    const data = await resp.json();
-    const text = (data.content||[]).map(c=>c.text||'').join('').trim();
+    if(!resp.ok) throw new Error(`Server lỗi: ${resp.status}`);
 
-    // Extract base64 — look for long base64 string
-    const b64match = text.match(/[A-Za-z0-9+/=]{500,}/);
-    if(!b64match) throw new Error('No base64 in response: '+text.substring(0,200));
-
-    const b64 = b64match[0].replace(/\s/g,'');
-    const bytes = atob(b64);
-    const arr = new Uint8Array(bytes.length);
-    for(let i=0;i<bytes.length;i++) arr[i]=bytes.charCodeAt(i);
-    const blob = new Blob([arr],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href=url; a.download=fname; a.click();
+    const blob=await resp.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    const fname=`TimeSheet_${String(month).padStart(2,'0')}_${year}_Team.xlsx`;
+    a.download=fname; a.click();
     URL.revokeObjectURL(url);
-    showDropToast(`✅ Đã xuất: ${fname}`);
+    showDropToast(`✅ Đã xuất: ${fname} (${memberList.length} nhân sự)`);
 
   }catch(err){
-    console.warn('Claude API timesheet failed:',err.message);
-    showDropToast(`⚠️ Đang dùng xuất cơ bản (${err.message.substring(0,40)})...`);
-    _doExportTimesheetFallback(member,month,year,taskRows,fname);
+    console.warn('Local server không chạy:', err.message);
+    // Fallback to SheetJS basic
+    showDropToast('⚠️ Server chưa chạy! Đang xuất dạng cơ bản...');
+    setTimeout(()=>{
+      memberList.forEach((m,i)=>{
+        setTimeout(()=>{
+          const taskRows=buildTimesheetData(m,month,year);
+          const fname=`TimeSheet_${String(month).padStart(2,'0')}_${year}_${m.name.replace(/\s+/g,'_')}.xlsx`;
+          _doExportTimesheetFallback(m,month,year,taskRows,fname);
+        },i*500);
+      });
+    },300);
   }
 }
+
 
 function buildTimesheetPrompt(payload){
   return `You are a Python code executor. Run the following Python code and return ONLY the base64-encoded output of the xlsx file. No explanation, no markdown, just the raw base64 string.
