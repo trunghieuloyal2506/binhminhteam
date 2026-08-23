@@ -2848,6 +2848,9 @@ function renderWeekView(){
   });
 
   // ── Hour rows ──
+  // Pre-build a set of work tasks that span multiple hours so we skip their continuation cells
+  const spanningWorkIds=new Set(); // taskId → already rendered
+
   HOURS.forEach(h=>{
     const timeCell=document.createElement('div');timeCell.className='wg-time-col';timeCell.textContent=h+':00';
     grid.appendChild(timeCell);
@@ -2860,32 +2863,66 @@ function renderWeekView(){
       // Collect items for this cell
       const cellItems=[
         ...events.filter(e=>e.date===ds&&parseInt(e.time)===h).map(e=>({_type:'event',_id:e.id,...e})),
-        ...workTasks.filter(t=>t.date===ds&&parseInt(normTime(t.time))===h&&(weekPersonFilter==='all'||(t.assignee?.trim()||'')=== weekPersonFilter)).map(t=>({_type:'work',_id:t.id,...t})),
+        ...workTasks.filter(t=>{
+          if(!t.date||t.date!==ds)return false;
+          const tH=parseInt(normTime(t.time));
+          if(tH!==h)return false;
+          if(weekPersonFilter!=='all'&&(t.assignee?.trim()||'')!==weekPersonFilter)return false;
+          return true;
+        }).map(t=>({_type:'work',_id:t.id,...t})),
         ...domainTasks.english.filter(t=>t.date===ds&&parseInt(normTime(t.time))===h).map(t=>({_type:'english',_id:t.id,...t})),
       ];
 
       if(cellItems.length) cell.classList.add('has-event');
 
       cellItems.forEach(item=>{
+        // Skip if already rendered as a spanning event
+        if(item._type==='work'&&spanningWorkIds.has(String(item._id)))return;
+
         const ev=document.createElement('div');
-        ev.className='wg-event';
         ev.draggable=true;
         ev.dataset.itemType=item._type;
         ev.dataset.itemId=String(item._id);
 
         // Color & icon
         let col,icon='';
-        if(item._type==='event'){col=({work:'#2563EB',family:'#DC2626',study:'#7C3AED',health:'#D97706',other:'#64748B'}[item.cat]||'#64748B');
-          ev.className='wg-event wg-event-'+(item.cat||'other');}
-        else if(item._type==='work'){const p=projects.find(x=>x.id===item.projId);col=p?p.color:'#2563EB';icon='💼 ';
-          ev.style.cssText=`background:${col}18;color:${col};border-left:3px solid ${col}`;}
-        else if(item._type==='ncs'){const p=domainProjects.ncs.find(x=>x.id===item.projId);col=p?p.color:'#0891B2';icon='🔬 ';
-          ev.style.cssText=`background:${col}18;color:${col};border-left:3px solid ${col}`;}
-        else{const p=domainProjects.english.find(x=>x.id===item.projId);col=p?p.color:'#D946EF';icon='🇬🇧 ';
-          ev.style.cssText=`background:${col}18;color:${col};border-left:3px solid ${col}`;}
+        if(item._type==='event'){
+          col=({work:'#2563EB',family:'#DC2626',study:'#7C3AED',health:'#D97706',other:'#64748B'}[item.cat]||'#64748B');
+          ev.className='wg-event wg-event-'+(item.cat||'other');
+        } else if(item._type==='work'){
+          const p=projects.find(x=>x.id===item.projId);col=p?p.color:'#2563EB';icon='💼 ';
+          ev.className='wg-event';
+        } else {
+          const p=domainProjects.english.find(x=>x.id===item.projId);col=p?p.color:'#D946EF';icon='🇬🇧 ';
+          ev.className='wg-event';
+        }
 
-        ev.title=item.name;
-        ev.textContent=icon+normTime(item.time).slice(0,5)+' '+item.name;
+        // ── Spanning: if work task has hours > 0, make it tall ──
+        if(item._type==='work'&&item.hours>0){
+          const slotH=48; // px per hour
+          const heightPx=Math.round(item.hours*slotH)-4;
+          const endH=parseInt(normTime(item.time))+item.hours;
+          ev.style.cssText=`background:${col}22;color:${col};border-left:3px solid ${col};
+            position:absolute;left:2px;right:2px;top:2px;
+            height:${heightPx}px;z-index:2;border-radius:6px;
+            padding:4px 6px;font-size:10px;font-weight:500;overflow:hidden;cursor:pointer;
+            box-shadow:0 2px 6px ${col}40;line-height:1.35`;
+          // Show time range
+          const startStr=normTime(item.time).slice(0,5);
+          const endHour=Math.floor(endH);
+          const endMin=Math.round((endH-endHour)*60);
+          const endStr=`${String(endHour).padStart(2,'0')}:${String(endMin).padStart(2,'0')}`;
+          ev.innerHTML=`<div style="font-weight:700;font-size:11px">${icon}${item.name}</div>
+            <div style="font-size:9px;opacity:.8;margin-top:2px">⏰ ${startStr} – ${endStr} (${item.hours}h)</div>
+            ${item.assignee?`<div style="font-size:9px;opacity:.7;margin-top:1px">👤 ${item.assignee}</div>`:''}`;
+          spanningWorkIds.add(String(item._id));
+        } else {
+          // Normal single-slot event
+          if(item._type==='work')
+            ev.style.cssText=`background:${col}18;color:${col};border-left:3px solid ${col}`;
+          ev.title=item.name;
+          ev.textContent=icon+normTime(item.time).slice(0,5)+' '+item.name;
+        }
 
         // Click → open modal
         ev.addEventListener('click',e=>{e.stopPropagation();openDayModal(ds,h);});
@@ -2896,7 +2933,6 @@ function renderWeekView(){
           e.dataTransfer.setData('itemType',item._type);
           e.dataTransfer.setData('itemId',String(item._id));
           ev.classList.add('dragging');
-          // Ghost element
           const ghost=document.createElement('div');
           ghost.className='drag-ghost';
           ghost.textContent=icon+item.name;
