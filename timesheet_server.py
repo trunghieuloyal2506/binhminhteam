@@ -193,48 +193,142 @@ def build_sheet(wb, member, month, year, tasks, leave_map, sheet_name=None):
 def build_summary(wb, all_md, month, year):
     MN=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
     ws=wb.create_sheet('SUMMARY')
-    ws.column_dimensions['A'].width=5; ws.column_dimensions['B'].width=20
-    ws.column_dimensions['C'].width=14; ws.column_dimensions['D'].width=12
-    ws.column_dimensions['E'].width=12; ws.column_dimensions['F'].width=12
-    ws.column_dimensions['G'].width=14
 
-    M(ws,1,1,1,7); c=ws.cell(1,1)
-    c.value=f'TEAM TIMESHEET SUMMARY — {MN[month]} {year} (Unit: Days)'
+    # Collect all unique projects/leave rows
+    proj_rows = {}  # key: (label, code_or_proj) -> {member_name: days}
+    member_names = [md['member']['name'] for md in all_md]
+
+    for md in all_md:
+        name = md['member']['name']
+        days_in_month = calendar.monthrange(year, month)[1]
+
+        # Work tasks grouped by project
+        for t in md['tasks']:
+            proj_name = t.get('projName','?')
+            phase = t.get('phase','')
+            phase_label = {'cost':'Cost Plan','pre':'Pre-Tender','post':'Post-Tender','qs':'QS Service'}.get(phase,'')
+            proj_code = t.get('projCode','')
+            key = proj_name
+            code_prefix = f"{proj_code}. " if proj_code and proj_code != proj_name else ""
+            label = f"{code_prefix}{proj_name}" + (f" ({phase_label})" if phase_label else "")
+            total_h = sum(float(v) for v in t.get('hours',{}).values() if v)
+            total_d = hrs_to_days(total_h)
+            if total_d > 0:
+                if key not in proj_rows: proj_rows[key] = {'label': label, 'data': {}}
+                proj_rows[key]['data'][name] = proj_rows[key]['data'].get(name, 0) + total_d
+
+        # Leave rows
+        LEAVE_LABELS = {'TT':'Travelling','SL':'Sick Leave','SPL':'Special Leave','AL':'Annual Leave','PL':'Public Holidays'}
+        for code, lbl in LEAVE_LABELS.items():
+            lhrs = md.get('leave_map', {}).get(code, {})
+            total_h = sum(float(v) for v in lhrs.values() if v)
+            total_d = hrs_to_days(total_h)
+            if total_d > 0:
+                if code not in proj_rows: proj_rows[code] = {'label': lbl, 'data': {}}
+                proj_rows[code]['data'][name] = proj_rows[code]['data'].get(name, 0) + total_d
+
+    # Column widths
+    n_members = len(member_names)
+    ws.column_dimensions['A'].width = 4
+    ws.column_dimensions['B'].width = 26
+    for i in range(n_members):
+        ws.column_dimensions[get_column_letter(3+i)].width = 13
+    ws.column_dimensions[get_column_letter(3+n_members)].width = 10
+
+    # Title
+    title_end = 2 + n_members + 1  # B + members + Total
+    M(ws,1,1,1,title_end)
+    c=ws.cell(1,1); c.value=f'TEAM TIMESHEET SUMMARY — {MN[month]} {year} (Unit: Days)'
     c.font=Fn(True,13,CW); c.fill=F(CN); c.alignment=Al(); ws.row_dimensions[1].height=24
 
-    ws.row_dimensions[3].height=18
-    for ci,(lbl,h) in enumerate([('STT','center'),('Thành viên','left'),('Chức vụ','left'),
-                                   ('Ngày CV','center'),('Ngày nghỉ','center'),
-                                   ('Tổng ngày','center'),('% Công suất','center')],1):
-        c=ws.cell(3,ci); c.value=lbl; c.font=Fn(True,10,CW)
-        c.fill=F(CN); c.alignment=Al(h=h); c.border=Bd()
+    # Header row: STT | Dự án / Nghỉ | Name1 | Name2 | ... | Tổng
+    ws.row_dimensions[3].height=20
+    S(ws,3,1,'STT',bold=True,sz=10,fg=CN,fc=CW,h='center')
+    S(ws,3,2,'Dự án / Loại nghỉ',bold=True,sz=10,fg=CN,fc=CW,h='left')
+    for i, name in enumerate(member_names):
+        short = name.split()[-1] if ' ' in name else name  # last name only
+        S(ws,3,3+i,short,bold=True,sz=9,fg=CN,fc=CW,h='center',wrap=True)
+    S(ws,3,3+n_members,'Tổng',bold=True,sz=10,fg=CO,fc=CW,h='center')
 
-    total_all=0
-    for i,md in enumerate(all_md,1):
-        r=3+i; ws.row_dimensions[r].height=16
-        work_h=sum(sum(float(v) for v in t.get('hours',{}).values()) for t in md['tasks'])
-        leave_h=sum(sum(float(v) for v in lv.values()) for lv in md['leave_map'].values())
-        work_d=round(hrs_to_days(work_h),2)
-        leave_d=round(hrs_to_days(leave_h),2)
-        total_d=round(work_d+leave_d,2)
-        cap=md['working_days']
-        pct=round(total_d/cap*100,1) if cap>0 else 0
-        total_all+=total_d
-        for ci,(val,h) in enumerate([(i,'center'),(md['member']['name'],'left'),
-                (md['member'].get('role','') or 'QS Engineer','left'),
-                (work_d,'center'),(leave_d,'center'),(total_d,'center'),(f'{pct}%','center')],1):
-            c=ws.cell(r,ci); c.value=val; c.font=Fn(sz=10)
-            c.alignment=Al(h=h); c.border=Bd()
-            if i%2==0: c.fill=F('F5F5F5')
-        pct_c=ws.cell(r,7)
-        pct_c.font=Fn(True,10,'EF4444' if pct>120 else ('F97316' if pct>110 else ('F59E0B' if pct>100 else '15803D')))
+    # Data rows
+    row = 4
+    # Pre-Contract section header
+    pre_projs = {k:v for k,v in proj_rows.items() if k not in ['TT','SL','SPL','AL','PL']}
+    leave_projs = {k:v for k,v in proj_rows.items() if k in ['TT','SL','SPL','AL','PL']}
 
-    tr=3+len(all_md)+1; ws.row_dimensions[tr].height=18
-    M(ws,tr,1,tr,2); S(ws,tr,1,'TỔNG CỘNG',bold=True,sz=11,fg=CY,h='center')
-    for ci in [3,4,5]: S(ws,tr,ci,'',fg=CY)
-    S(ws,tr,6,round(total_all,2),bold=True,sz=11,fg=CY,h='center',nf='0.00')
-    S(ws,tr,7,'',fg=CY)
-    ws.freeze_panes='A4'
+    def write_section_header(ws, row, label):
+        M(ws,row,1,row,3+n_members)
+        c=ws.cell(row,1); c.value=label
+        c.font=Fn(True,9,'1F3864',italic=True)
+        c.fill=F(CL); c.alignment=Al(h='left'); c.border=Bd()
+        ws.row_dimensions[row].height=16
+        return row+1
+
+    if pre_projs:
+        row = write_section_header(ws, row, 'Work')
+        for idx,(key,info) in enumerate(pre_projs.items(),1):
+            ws.row_dimensions[row].height=15
+            bg = 'F5F5F5' if idx%2==0 else CW
+            S(ws,row,1,idx,sz=9,fg=bg,h='center')
+            S(ws,row,2,info['label'],sz=9,fg=bg,h='left')
+            row_total = 0
+            for i,name in enumerate(member_names):
+                val = round(info['data'].get(name,0), 2)
+                c=ws.cell(row,3+i); c.value=val if val else ''
+                c.font=Fn(sz=9); c.alignment=Al(h='center'); c.border=Bd()
+                c.fill=F(bg); c.number_format='0.00'
+                row_total += val
+            S(ws,row,3+n_members,round(row_total,2) if row_total else '',bold=True,sz=9,fg=CY,h='center',nf='0.00')
+            row+=1
+
+    if leave_projs:
+        row = write_section_header(ws, row, 'Leave / Nghỉ')
+        for idx,(key,info) in enumerate(leave_projs.items(),1):
+            ws.row_dimensions[row].height=15
+            bg = 'FFF9C4' if idx%2==0 else 'FFFDE7'
+            S(ws,row,1,idx,sz=9,fg=bg,h='center')
+            S(ws,row,2,info['label'],sz=9,fg=bg,h='left')
+            row_total=0
+            for i,name in enumerate(member_names):
+                val=round(info['data'].get(name,0),2)
+                c=ws.cell(row,3+i); c.value=val if val else ''
+                c.font=Fn(sz=9); c.alignment=Al(h='center'); c.border=Bd()
+                c.fill=F(bg); c.number_format='0.00'
+                row_total+=val
+            S(ws,row,3+n_members,round(row_total,2) if row_total else '',bold=True,sz=9,fg=CY,h='center',nf='0.00')
+            row+=1
+
+    # Total row
+    ws.row_dimensions[row].height=20
+    M(ws,row,1,row,2); S(ws,row,1,'TỔNG CỘNG',bold=True,sz=11,fg=CY,h='center')
+    grand=0
+    for i,name in enumerate(member_names):
+        total_d=round(sum(
+            info['data'].get(name,0) for info in proj_rows.values()
+        ),2)
+        grand+=total_d
+        c=ws.cell(row,3+i); c.value=total_d if total_d else 0
+        c.font=Fn(True,11); c.fill=F(CY); c.alignment=Al(h='center'); c.border=Bd()
+        c.number_format='0.00'
+        # Color by workload %
+        wd=all_md[i]['working_days']
+        pct=round(total_d/wd*100,1) if wd>0 else 0
+        c.font=Fn(True,11,'EF4444' if pct>120 else ('F97316' if pct>110 else ('F59E0B' if pct>100 else '1F3864')))
+    S(ws,row,3+n_members,round(grand,2),bold=True,sz=11,fg=CY,h='center',nf='0.00')
+
+    # % row
+    row+=1; ws.row_dimensions[row].height=16
+    M(ws,row,1,row,2); S(ws,row,1,'% Công suất',bold=True,sz=10,fg=CL,h='center')
+    for i,md in enumerate(all_md):
+        total_d=round(sum(info['data'].get(md['member']['name'],0) for info in proj_rows.values()),2)
+        wd=md['working_days']
+        pct=round(total_d/wd*100,1) if wd>0 else 0
+        col='EF4444' if pct>120 else ('F97316' if pct>110 else ('F59E0B' if pct>100 else '15803D'))
+        S(ws,row,3+i,f'{pct}%',bold=True,sz=10,fg=CL,fc=col,h='center')
+    S(ws,row,3+n_members,'',fg=CL)
+
+    ws.freeze_panes='C4'
+
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,format,*args):

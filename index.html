@@ -907,8 +907,9 @@ select option{background:var(--surface);color:var(--text)}
   </div>
   <!-- Add project form -->
   <div class="add-form" id="proj-add-form">
-    <div class="form-grid">
-      <input type="text" id="pj-name" placeholder="Tên dự án...">
+    <div class="form-grid three">
+      <input type="text" id="pj-code" placeholder="Mã số (VD: 247)" style="max-width:120px">
+      <input type="text" id="pj-name" placeholder="Tên dự án (VD: MY PHU)...">
       <select id="pj-color">
         <option value="#2563EB">🔵 Xanh dương</option>
         <option value="#7C3AED">🟣 Tím</option>
@@ -2007,9 +2008,12 @@ function openAddProject(){openForm('proj-add-form');setTimeout(()=>document.getE
 function addProject(){
   const name=document.getElementById('pj-name').value.trim();
   if(!name)return;
+  const code=document.getElementById('pj-code').value.trim();
   const id='p'+Date.now();
-  projects.push({id,name,color:document.getElementById('pj-color').value});
+  projects.push({id,name,code,color:document.getElementById('pj-color').value});
   document.getElementById('pj-name').value='';
+  document.getElementById('pj-code').value='';
+  saveData();
   closeForm('proj-add-form');
   activeProjId=id;
   renderWorkPage();
@@ -2190,8 +2194,9 @@ function renderWorkPage(){
   // Project tabs
   let tabHtml=`<button class="proj-tab all-tab ${activeProjId==='all'?'active':''}" onclick="setActiveProjTab('all')">🗂️ Tất cả</button>`;
   projects.forEach(p=>{
+    const codeLabel=p.code?`<span style="font-size:10px;opacity:.7;margin-right:3px">${escHtml(p.code)}.</span>`:'';
     tabHtml+=`<button class="proj-tab ${activeProjId===p.id?'active':''}" onclick="setActiveProjTab('${p.id}')">
-      <span class="proj-color-dot" style="background:${p.color}"></span>${escHtml(p.name)}
+      <span class="proj-color-dot" style="background:${p.color}"></span>${codeLabel}${escHtml(p.name)}
       ${activeProjId===p.id?`<span onclick="event.stopPropagation();deleteProject('${p.id}')" style="margin-left:4px;color:var(--text3);cursor:pointer" title="Xóa dự án">✕</span>`:''}
     </button>`;
   });
@@ -2202,10 +2207,10 @@ function renderWorkPage(){
   if(activeProjId!=='all'){phaseTabs.classList.add('visible');}
   else{phaseTabs.classList.remove('visible');activePhase='all';}
 
-  // Populate proj select in add form
+  // Populate proj select in add form — show code prefix
   const sel=document.getElementById('wt-proj');
   const curVal=sel.value;
-  sel.innerHTML='<option value="">-- Chọn dự án --</option>'+projects.map(p=>`<option value="${p.id}" ${curVal===p.id?'selected':''}>${p.name}</option>`).join('');
+  sel.innerHTML='<option value="">-- Chọn dự án --</option>'+projects.map(p=>`<option value="${p.id}" ${curVal===p.id?'selected':''}>${p.code?p.code+'. ':''}${p.name}</option>`).join('');
   if(activeProjId!=='all') sel.value=activeProjId;
   // Pre-select phase in add form
   if(activeProjId!=='all'&&activePhase!=='all') document.getElementById('wt-phase').value=activePhase;
@@ -4221,7 +4226,7 @@ function buildTimesheetData(member, month, year){
       const section=['cost','pre'].includes(t.phase)?'pre':['post','qs'].includes(t.phase)?'post':'other';
       rowMap[key]={
         projName:proj?.name||t.name||'?',
-        projCode:proj?.name?.substring(0,10)||'?',
+        projCode:proj?.code||proj?.name?.substring(0,10)||'?',
         package:lot?.name||'Main Contract',
         taskCode:phaseToCode[t.phase]||'ME',
         phase:t.phase||'',
