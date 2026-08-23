@@ -978,6 +978,18 @@ select option{background:var(--surface);color:var(--text)}
       </div>
       <input type="text" id="wt-note" placeholder="Ghi chú...">
     </div>
+    <!-- Eisenhower checkboxes -->
+    <div style="display:flex;gap:16px;padding:8px 0;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500">
+        <input type="checkbox" id="wt-important" style="width:16px;height:16px;accent-color:#2563EB;cursor:pointer">
+        <span style="color:#2563EB">⭐ Quan trọng</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500">
+        <input type="checkbox" id="wt-urgent" style="width:16px;height:16px;accent-color:#EF4444;cursor:pointer">
+        <span style="color:#EF4444">⚡ Khẩn cấp</span>
+      </label>
+      <span style="font-size:11px;color:var(--text3);align-self:center">→ Tự động xếp vào Eisenhower Matrix</span>
+    </div>
     <div class="form-actions">
       <button class="btn" onclick="closeForm('work-task-add')">Hủy</button>
       <button class="btn btn-primary" onclick="addWorkTask()">Thêm task</button>
@@ -2036,12 +2048,16 @@ function addWorkTask(){
     time:rawTime,
     hours:parseFloat(document.getElementById('wt-hours').value)||0,
     assignee,
+    important:document.getElementById('wt-important')?.checked||false,
+    urgent:document.getElementById('wt-urgent')?.checked||false,
     note:document.getElementById('wt-note').value
   });
   if(assignee) addAssigneeName(assignee);
   document.getElementById('wt-name').value='';
   document.getElementById('wt-note').value='';
   document.getElementById('wt-assignee').value='';
+  if(document.getElementById('wt-important')) document.getElementById('wt-important').checked=false;
+  if(document.getElementById('wt-urgent')) document.getElementById('wt-urgent').checked=false;
   saveData();
   closeForm('work-task-add');renderWorkPage();renderToday();renderWeekView();renderMonthView();
 }
@@ -2114,6 +2130,18 @@ function openEditWorkTask(id){
           onfocus="showAssigneeSuggest('wti-assignee','wti-assign-dd')">
         <div class="assignee-dropdown" id="wti-assign-dd"></div>
       </div>
+    </div>
+    <!-- Eisenhower checkboxes -->
+    <div style="display:flex;gap:20px;padding:10px 0;flex-wrap:wrap;border-top:1px solid var(--border);margin-top:8px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500">
+        <input type="checkbox" id="wti-important" ${t.important?'checked':''} style="width:16px;height:16px;accent-color:#2563EB;cursor:pointer">
+        <span style="color:#2563EB">⭐ Quan trọng</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500">
+        <input type="checkbox" id="wti-urgent" ${t.urgent?'checked':''} style="width:16px;height:16px;accent-color:#EF4444;cursor:pointer">
+        <span style="color:#EF4444">⚡ Khẩn cấp</span>
+      </label>
+      <span style="font-size:11px;color:var(--text3);align-self:center">Eisenhower: ${t.important&&t.urgent?'🔴 DO FIRST':t.important&&!t.urgent?'🔵 SCHEDULE':!t.important&&t.urgent?'🟡 DELEGATE':'🟢 ELIMINATE'}</span>
     </div>`;
   document.getElementById('edit-modal').classList.add('open');
   setTimeout(()=>document.getElementById('wti-name').focus(),50);
@@ -2371,6 +2399,8 @@ function taskListRow(t){
     ${emailBadge}
     ${t.assignee?`<span class="assignee-badge">👤 ${escHtml(t.assignee)}</span>`:''}
     ${t.hours?`<span class="hours-badge">⏱️ ${t.hours}h</span>`:''}
+    ${t.important?`<span class="hours-badge" style="color:#2563EB;border-color:#BFDBFE;background:#EFF6FF">⭐ Quan trọng</span>`:''}
+    ${t.urgent?`<span class="hours-badge" style="color:#EF4444;border-color:#FECACA;background:#FEF2F2">⚡ Khẩn cấp</span>`:''}
     <span class="ktask-pri pri-${t.pri}">${PRI_LABELS[t.pri]}</span>
     <span class="status-badge status-${t.status}">${STATUS_LABELS[t.status]}</span>
     ${t.date?`<span class="ktask-date">${t.date}</span>`:''}
@@ -2731,6 +2761,8 @@ function saveEdit(){
     t.status=document.getElementById('wti-status').value;t.pri=document.getElementById('wti-pri').value;
     t.date=document.getElementById('wti-date').value;t.time=document.getElementById('wti-time').value||'09:00';
     t.hours=parseFloat(document.getElementById('wti-hours').value)||0;
+    t.important=document.getElementById('wti-important')?.checked||false;
+    t.urgent=document.getElementById('wti-urgent')?.checked||false;
     const newAssignee=(document.getElementById('wti-assignee').value||'').trim();
     t.assignee=newAssignee;
     if(newAssignee) addAssigneeName(newAssignee);
@@ -4466,16 +4498,25 @@ function renderEisenhower(){
   const in3days=new Date(today);in3days.setDate(today.getDate()+3);
 
   function classify(t){
+    // If user explicitly set important/urgent flags — use those directly
+    if(t.important!==undefined||t.urgent!==undefined){
+      const imp=!!t.important;
+      const urg=!!t.urgent;
+      if(imp&&urg)  return 'q1'; // DO FIRST
+      if(imp&&!urg) return 'q2'; // SCHEDULE
+      if(!imp&&urg) return 'q3'; // DELEGATE
+      return 'q4';               // ELIMINATE
+    }
+    // Fallback: auto-classify by priority + deadline
     const hasDue=!!t.date;
     const dueDate=hasDue?parseDate(t.date):null;
     const isOverdue=hasDue&&dueDate<today&&t.status!=='done';
     const isDueSoon=hasDue&&dueDate<=in3days&&dueDate>=today;
     const isHighPri=t.pri==='high';
     const isMidPri=t.pri==='mid';
-    const isLowPri=t.pri==='low';
     if(isHighPri||(isMidPri&&isOverdue)) return isOverdue||isDueSoon?'q1':'q2';
     if(isMidPri) return isDueSoon||isOverdue?'q1':'q2';
-    if(isLowPri&&(isOverdue||isDueSoon)) return 'q3';
+    if(t.pri==='low'&&(isOverdue||isDueSoon)) return 'q3';
     return 'q4';
   }
 
